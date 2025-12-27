@@ -128,3 +128,307 @@ Use a custom hook `useAgentSocket` to manage the complex state of the Request De
 3.  **Features:** Implement Search -> Analysis Flow first (The Core Loop).
 4.  **Dashboards:** Build the Entity Dossiers.
 5.  **Polish:** Animations and transitions.
+
+It appears that the design tool (Stitch) misinterpreted the request or defaulted to a "Mobile App" flow, likely due to the density of the request. Since you are building a **Pro Data Analyst Dashboard** (large tables, logs, analytics), we definitely want the **Desktop View**.
+
+Here is a **Corrected Prompt** to force the Desktop Web view, followed by the **Actual React Code** for the core dashboard components so you can bypass the mockup phase if you prefer.
+
+### **Option 1: The "Strict Desktop" Stitch Prompt**
+
+Paste this into Stitch. I have removed ambiguous terms and explicitly requested a wide-screen web layout.
+
+```text
+Design a Desktop Web Application (1440px width) for a "San Francisco DBI Data Analyst" dashboard.
+DO NOT generate mobile screens. This is a desktop-only administration tool.
+
+Style:
+- Theme: "Shadcn UI" (Clean, White/Zinc, Inter font).
+- Layout: Fixed left sidebar (250px), scrollable main content area.
+
+Generate these 2 Desktop Views:
+
+1. The "Mission Control" Dashboard:
+   - Top area: 4 Metric Cards (Active Crawls, Records Indexed, API Health, Anomalies).
+   - Main area: A dense data table titled "Recent Task History".
+   - Table Columns: UUID, Task Type (Badge), Status (Live/Done), Time Elapsed, Actions.
+   - Include a "New Search" primary button in the top right.
+
+2. The "Live Task Console" (Detail View):
+   - A split-screen desktop layout.
+   - Left Panel (1/3 width): A vertical stepper showing progress (Connecting -> Fetching Socrata -> Normalizing -> Saving).
+   - Right Panel (2/3 width): A dark-themed code terminal window displaying streaming text logs (e.g., "> [INFO] Found 142 records...").
+
+```
+
+---
+
+### **Option 2: The Actual Code (Skip the Mockup)**
+
+Since you have the repo set up, you can drop this code directly into your `apps/app` folder to get the **Dashboard** and **Live Console** working immediately.
+
+#### **1. The Dashboard Page**
+
+**File:** `apps/app/routes/(app)/dashboard.tsx`
+
+```tsx
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Activity, Database, AlertTriangle, Play } from "lucide-react";
+
+export const Route = createFileRoute("/(app)/dashboard")({
+  component: Dashboard,
+});
+
+// Mock Data - Replace with useQuery calling /api/requests
+const recentRequests = [
+  {
+    id: "req_123",
+    type: "Contractor Search",
+    status: "processing",
+    date: "2 mins ago",
+  },
+  {
+    id: "req_124",
+    type: "Bulk Analysis",
+    status: "completed",
+    date: "1 hour ago",
+  },
+  { id: "req_125", type: "Permit Audit", status: "failed", date: "Yesterday" },
+];
+
+function Dashboard() {
+  return (
+    <div className="flex flex-col gap-6 p-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold tracking-tight">Mission Control</h1>
+        <Button asChild>
+          <Link to="/search">
+            <Play className="mr-2 h-4 w-4" /> New Task
+          </Link>
+        </Button>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <StatsCard
+          title="Active Crawls"
+          value="3"
+          icon={Activity}
+          desc="Currently running"
+        />
+        <StatsCard
+          title="Records Indexed"
+          value="1.2M"
+          icon={Database}
+          desc="+14k today"
+        />
+        <StatsCard
+          title="Anomalies"
+          value="12"
+          icon={AlertTriangle}
+          desc="Requires attention"
+          className="border-amber-200 bg-amber-50"
+        />
+        <StatsCard
+          title="API Health"
+          value="98.2%"
+          icon={Activity}
+          desc="Socrata Latency: 45ms"
+        />
+      </div>
+
+      {/* Recent Requests Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent Task History</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Request ID</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Created</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {recentRequests.map((req) => (
+                <TableRow key={req.id}>
+                  <TableCell className="font-mono text-xs">{req.id}</TableCell>
+                  <TableCell>{req.type}</TableCell>
+                  <TableCell>
+                    <StatusBadge status={req.status} />
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {req.date}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="ghost" size="sm" asChild>
+                      <Link to={`/requests/${req.id}`}>View Logs</Link>
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function StatsCard({ title, value, icon: Icon, desc, className }: any) {
+  return (
+    <Card className={className}>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        <Icon className="h-4 w-4 text-muted-foreground" />
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-bold">{value}</div>
+        <p className="text-xs text-muted-foreground">{desc}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const styles = {
+    processing: "bg-blue-100 text-blue-800 hover:bg-blue-100",
+    completed: "bg-green-100 text-green-800 hover:bg-green-100",
+    failed: "bg-red-100 text-red-800 hover:bg-red-100",
+  };
+  return (
+    <Badge className={styles[status as keyof typeof styles] || ""}>
+      {status}
+    </Badge>
+  );
+}
+```
+
+#### **2. The Live Console Page (Agent Stream)**
+
+**File:** `apps/app/routes/(app)/requests/$requestId.tsx`
+
+```tsx
+import { createFileRoute } from "@tanstack/react-router";
+import { Card } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { useAgentSocket } from "@/hooks/use-agent-stream"; // Custom hook we discussed
+import { Loader2, CheckCircle2, Terminal } from "lucide-react";
+
+export const Route = createFileRoute("/(app)/requests/$requestId")({
+  component: RequestDetails,
+});
+
+function RequestDetails() {
+  const { requestId } = Route.useParams();
+  const { logs, status } = useAgentSocket(requestId); // Assumes hook returns logs[]
+
+  return (
+    <div className="grid h-[calc(100vh-4rem)] grid-cols-1 gap-6 p-6 lg:grid-cols-3">
+      {/* Left: Status & Metadata */}
+      <div className="space-y-6">
+        <Card className="p-6">
+          <h2 className="mb-4 text-lg font-semibold">Task Progress</h2>
+          <div className="space-y-4">
+            {/* Mock Stepper */}
+            <Step label="Queued" active={true} completed={true} />
+            <Step
+              label="Fetching SODA Data"
+              active={status === "processing"}
+              completed={status === "completed"}
+            />
+            <Step label="AI Normalization" active={false} completed={false} />
+            <Step label="Finalizing" active={false} completed={false} />
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <h3 className="text-sm font-medium text-muted-foreground">
+            Request UUID
+          </h3>
+          <p className="font-mono text-sm">{requestId}</p>
+        </Card>
+      </div>
+
+      {/* Right: Live Terminal */}
+      <div className="lg:col-span-2">
+        <Card className="flex h-full flex-col overflow-hidden border-zinc-800 bg-zinc-950 text-zinc-50">
+          <div className="flex items-center gap-2 border-b border-zinc-800 bg-zinc-900 p-3">
+            <Terminal className="h-4 w-4" />
+            <span className="text-xs font-mono">agent-logs.log</span>
+            {status === "processing" && (
+              <span className="ml-auto flex h-2 w-2 animate-pulse rounded-full bg-green-500" />
+            )}
+          </div>
+          <ScrollArea className="flex-1 p-4 font-mono text-sm">
+            {logs.length === 0 ? (
+              <span className="text-zinc-500 opacity-50">
+                Waiting for agent connection...
+              </span>
+            ) : (
+              logs.map((log, i) => (
+                <div key={i} className="mb-1 break-all">
+                  <span className="mr-2 text-zinc-500">
+                    [{new Date().toLocaleTimeString()}]
+                  </span>
+                  <span
+                    className={
+                      log.includes("ERROR") ? "text-red-400" : "text-zinc-300"
+                    }
+                  >
+                    {log}
+                  </span>
+                </div>
+              ))
+            )}
+            <div id="log-end" />
+          </ScrollArea>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function Step({ label, active, completed }: any) {
+  return (
+    <div className="flex items-center gap-3">
+      <div
+        className={`flex h-8 w-8 items-center justify-center rounded-full border ${completed ? "bg-green-100 border-green-200" : active ? "border-blue-500 animate-pulse" : "border-zinc-200"}`}
+      >
+        {completed ? (
+          <CheckCircle2 className="h-5 w-5 text-green-600" />
+        ) : active ? (
+          <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+        ) : (
+          <div className="h-2 w-2 rounded-full bg-zinc-200" />
+        )}
+      </div>
+      <span
+        className={
+          active
+            ? "font-medium text-blue-900"
+            : completed
+              ? "text-zinc-900"
+              : "text-zinc-400"
+        }
+      >
+        {label}
+      </span>
+    </div>
+  );
+}
+```
