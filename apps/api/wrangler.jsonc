@@ -1,0 +1,104 @@
+{
+  "name": "core-dbi-database",
+  "main": "./src/index.ts",
+  "compatibility_date": "2025-08-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_url": false,
+  "upload_source_maps": true,
+  "assets": {
+    "directory": "./public/",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "not_found_handling": "single-page-application"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "dev": {
+    "port": 8787
+  },
+  "vars": {
+    "FRONTEND_BASE_URL": "https://core-dbi-database.hacolby.workers.dev",
+    "SODA_BASE": "https://data.sfgov.org/resource",
+    "AI_GATEWAY_NAME": "core-dbi-database",
+    "GEMINI_MODEL_NAME": "gemini-2.5-pro",
+    "OPENAI_MODEL_NAME": "gpt-4o",
+    "SANDBOX_BUCKET_NAME": "core-dbi-database"
+    // "SODA_APP_TOKEN": "REPLACE_ME"  -- set on .dev.vars
+  },
+  "ai": {
+    "binding": "AI",
+    "remote": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "core-dbi-database",
+      "database_id": "7268f732-5d4b-4eda-9223-d018acfd4cd6",
+      "remote": true
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BUCKET_SANDBOX",
+      "bucket_name": "core-dbi-database",
+      "preview_bucket_name": "core-dbi-database-preview",
+      "remote": true
+    }
+  ],
+  "containers": [
+    {
+      "class_name": "Sandbox",
+      "image": "./apps/api/src/container/Dockerfile" // must point to ./apps/api/src/container/Dockerfile
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ORCHESTRATOR",
+        "class_name": "OrchestratorAgent"
+      },
+      {
+        "name": "DATA_EXPERT",
+        "class_name": "DBIDataExpertAgent"
+      },
+      {
+        "name": "INSIGHTS",
+        "class_name": "DBIInsightsAgent"
+      },
+      {
+        "name": "ANALYST",
+        "class_name": "DBIDataAnalystAgent"
+      },
+      {
+        "name": "SANDBOX",
+        "class_name": "Sandbox"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": [
+        "OrchestratorAgent",
+        "DBIDataExpertAgent",
+        "DBIInsightsAgent",
+        "DBIDataAnalystAgent",
+        "Sandbox"
+      ]
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "KV_AGENT_FACTS",
+      "id": "d977a71274094e2c93dbed4ab454d4d2",
+      "remote": true
+    },
+    {
+      "binding": "KV_AGENT_LOGS",
+      "id": "b68149729011401ca757a82ec660195b",
+      "remote": true
+    }
+  ]
+}

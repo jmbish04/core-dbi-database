@@ -1,0 +1,118 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// -- Legacy Tables (Reverse Engineered from storage.ts) --
+
+model Request {
+  id          String   @id // request_id
+  kind        String   // 'api' | 'ws' | 'rpc' | 'mcp'
+  method      String
+  path        String
+  query       String
+  headersJson String?  @map("headers_json")
+  bodyText    String?  @map("body_text")
+  cfJson      String?  @map("cf_json")
+  status      String   // 'received', 'success', 'error'
+  errorText   String?  @map("error_text")
+  timestamp   DateTime @default(now())
+
+  meta        RequestMeta?
+  logs        RequestLog[]
+  results     RequestResult[]
+
+  @@map("requests")
+}
+
+model RequestMeta {
+  requestId String   @id @map("request_id")
+  updatedAt DateTime @default(now()) @map("updated_at")
+  progress  Float    @default(0)
+  statsJson String?  @map("stats_json")
+
+  request   Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@map("request_meta")
+}
+
+model RequestLog {
+  id        Int      @id @default(autoincrement())
+  requestId String   @map("request_id")
+  level     String   // 'debug'|'info'|'warn'|'error'
+  message   String
+  dataJson  String?  @map("data_json")
+  createdAt DateTime @default(now())
+
+  request   Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@map("request_logs")
+}
+
+model RequestResult {
+  id           Int      @id @default(autoincrement())
+  requestId    String   @map("request_id")
+  entity       String
+  source       String?
+  canonicalKey String?  @map("canonical_key")
+  rowJson      String   @map("row_json")
+  createdAt    DateTime @default(now())
+
+  request      Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@map("request_results")
+}
+
+// -- Health Service Tables --
+
+model HealthTestDefinition {
+  id               String   @id @default(cuid())
+  name             String   @unique
+  target           String
+  method           String   @default("GET")
+  expectedStatus   Int      @default(200)
+  frequencySeconds Int      @default(60)
+  criticality      String   @default("medium") // low, medium, high, critical
+  enabled          Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  results   HealthTestResult[]
+  incidents HealthIncident[]
+
+  @@map("health_test_definitions")
+}
+
+model HealthTestResult {
+  id           String   @id @default(cuid())
+  definitionId String?  @map("definition_id")
+  name         String? // For hardcoded/code-based tests
+  ok           Boolean
+  statusCode   Int?
+  latencyMs    Int
+  error        String?
+  aiSuggestion String?  @map("ai_suggestion")
+  createdAt    DateTime @default(now())
+
+  definition HealthTestDefinition? @relation(fields: [definitionId], references: [id])
+
+  @@map("health_test_results")
+}
+
+model HealthIncident {
+  id           String    @id @default(cuid())
+  definitionId String?   @map("definition_id")
+  name         String?
+  openedAt     DateTime  @default(now())
+  resolvedAt   DateTime?
+  lastError    String?
+  count        Int       @default(1)
+  active       Boolean   @default(true)
+
+  definition HealthTestDefinition? @relation(fields: [definitionId], references: [id])
+
+  @@map("health_incidents")
+}

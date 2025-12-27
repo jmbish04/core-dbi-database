@@ -1,0 +1,4 @@
+**/*.sql
+**/*migrations
+migrations
+**/*worker-configuration.d.ts

@@ -1,0 +1,55 @@
+{
+  "name": "@repo/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./auth": "./lib/auth.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "predev": "bun --filter @repo/email build",
+    "dev": "bun run --watch --env-file ../../../../.dev.vars ./src/dev.ts",
+    "build": "bun build index.ts --outdir dist --target bun",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit",
+    "typegen": "wrangler types --env-file ../../.dev.vars",
+    "secrets:bulk": "wrangler secret bulk ../../.dev.vars",
+    "test:container": "bun scripts/manage-container.ts test",
+    "deploy": "bun run test:container && wrangler deploy",
+    "logs": "wrangler tail",
+    "migrate:local": "bunx prisma migrate diff --from-empty --to-schema prisma/schema.prisma --script > migration.sql && wrangler d1 execute DB --local --file migration.sql",
+    "migrate:remote": "bunx prisma migrate diff --from-empty --to-schema prisma/schema.prisma --script > migration.sql && wrangler d1 execute DB --remote --file migration.sql",
+    "test:health": "curl -X POST https://core-dbi-database.hacolby.workers.dev/health/run"
+  },
+  "dependencies": {
+    "@cloudflare/sandbox": "^0.4.0",
+    "@google/genai": "^1.34.0",
+    "@hono/swagger-ui": "^0.5.1",
+    "@hono/zod-openapi": "^0.18.1",
+    "@prisma/adapter-d1": "^7.2.0",
+    "@prisma/client": "^7.2.0",
+    "@repo/core": "workspace:*",
+    "@repo/db": "workspace:*",
+    "@repo/email": "workspace:*",
+    "@trpc/server": "^11.7.2",
+    "agents": "^0.2.23",
+    "ai": "^6.0.3",
+    "dataloader": "^2.2.3",
+    "hono": "^4.10.7",
+    "openai": "^6.15.0",
+    "prisma": "^7.2.0",
+    "yaml": "^2.6.1",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251205.0",
+    "@repo/typescript-config": "workspace:*",
+    "@types/bun": "^1.3.3",
+    "better-sqlite3": "^12.5.0",
+    "typescript": "~5.9.3",
+    "vitest": "~4.0.15",
+    "wrangler": "^4.53.0"
+  }
+}
