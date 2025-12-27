@@ -1,0 +1,14 @@
+{
+  "extends": "../../packages/typescript-config/node.jsonc",
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "noEmit": false,
+    "outDir": "./dist",
+    "types": ["@cloudflare/workers-types", "bun"]
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["**/dist/**/*", "**/node_modules/**/*"],
+  "references": [{ "path": "../../packages/core" }, { "path": "../../db" }]
+}
