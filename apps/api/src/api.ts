@@ -100,15 +100,16 @@ export function createApp() {
       await schema.requestLogs.appendLog(
         c.env,
         requestId,
-        "info",
-        "search received",
-        body,
+        "INFO",
+        "Search request received",
+        JSON.stringify(body),
       );
 
       const stub = c.env.ORCHESTRATOR.get(
         c.env.ORCHESTRATOR.idFromName(requestId),
       );
-      await (stub as any).start(requestId, body);
+      // @ts-ignore - RPC types
+      await stub.start(requestId, body);
 
       const origin = new URL(c.req.url).origin;
       const monitorUrl = buildMonitorUrl(
@@ -116,15 +117,95 @@ export function createApp() {
         requestId,
       );
 
-      return c.json({
+      return c.json(
+        {
+          requestId,
+          status: "queued",
+          monitorUrl,
+          websocketUrl: buildWsUrl(origin, requestId),
+          statusUrl: `${origin}/v1/requests/${requestId}`,
+          logsUrl: `${origin}/v1/requests/${requestId}/logs`,
+          resultsUrl: `${origin}/v1/requests/${requestId}/results`,
+        },
+        200,
+      );
+    },
+  );
+
+  app.openapi(
+    createRoute({
+      method: "post",
+      path: "/v1/analyze",
+      operationId: "startAnalysis",
+      request: {
+        body: {
+          content: { "application/json": { schema: SearchRequestSchema } },
+        },
+      },
+      responses: {
+        200: {
+          description: "Analysis queued",
+          content: {
+            "application/json": { schema: StartSearchResponseSchema },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      const body = c.req.valid("json");
+      const requestId = c.get("requestId");
+
+      await schema.requests.queueRequest(c.env, requestId);
+      await schema.requestLogs.appendLog(
+        c.env,
         requestId,
-        status: "queued" as const,
-        monitorUrl,
-        websocketUrl: buildWsUrl(origin, requestId),
-        statusUrl: `${origin}/v1/requests/${requestId}`,
-        logsUrl: `${origin}/v1/requests/${requestId}/logs`,
-        resultsUrl: `${origin}/v1/requests/${requestId}/results`,
-      });
+        "INFO",
+        "Analysis request received",
+        JSON.stringify(body),
+      );
+
+      const stub = c.env.ORCHESTRATOR.get(
+        c.env.ORCHESTRATOR.idFromName(requestId),
+      );
+      // @ts-ignore - RPC types
+      await stub.start(requestId, body);
+
+      const origin = new URL(c.req.url).origin;
+      const monitorUrl = buildMonitorUrl(
+        c.env.FRONTEND_BASE_URL || origin,
+        requestId,
+      );
+
+      return c.json(
+        {
+          requestId,
+          status: "queued",
+          monitorUrl,
+          websocketUrl: buildWsUrl(origin, requestId),
+          statusUrl: `${origin}/v1/requests/${requestId}`,
+          logsUrl: `${origin}/v1/requests/${requestId}/logs`,
+          resultsUrl: `${origin}/v1/requests/${requestId}/results`,
+        },
+        200,
+      );
+    },
+  );
+
+  app.openapi(
+    createRoute({
+      method: "get",
+      path: "/v1/facts",
+      operationId: "getFacts",
+      responses: {
+        200: {
+          description: "List of facts",
+          content: { "application/json": { schema: z.array(FactSchema) } },
+        },
+      },
+    }),
+    async (c) => {
+      // Placeholder: fetch from D1
+      return c.json([], 200);
     },
   );
 

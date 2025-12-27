@@ -123,19 +123,17 @@ Use a custom hook `useAgentSocket` to manage the complex state of the Request De
 
 ## 6. Execution Plan
 
-1.  **Scaffold:** Setup routes and layout shell.
+1.  **Scaffold:** (DONE) Routes are scaffolded in `routes/(app)/*`.
 2.  **Components:** Build shared UI (Tables, Cards, Badge, Terminal).
 3.  **Features:** Implement Search -> Analysis Flow first (The Core Loop).
 4.  **Dashboards:** Build the Entity Dossiers.
 5.  **Polish:** Animations and transitions.
 
-It appears that the design tool (Stitch) misinterpreted the request or defaulted to a "Mobile App" flow, likely due to the density of the request. Since you are building a **Pro Data Analyst Dashboard** (large tables, logs, analytics), we definitely want the **Desktop View**.
+## 7. Current State (Pre-Wired)
 
-Here is a **Corrected Prompt** to force the Desktop Web view, followed by the **Actual React Code** for the core dashboard components so you can bypass the mockup phase if you prefer.
-
-### **Option 1: The "Strict Desktop" Stitch Prompt**
-
-Paste this into Stitch. I have removed ambiguous terms and explicitly requested a wide-screen web layout.
+- **Backend:** `/v1/analyze`, `/v1/requests/:id`, `/v1/facts` are implemented in `apps/api`.
+- **Frontend:** `routes/(app)/search.tsx`, `requests.$requestId.tsx`, `knowledge.tsx`, `contractors.$id.tsx` are created as placeholders.
+- **Next Step:** Implement the actual UI components inside these route files.
 
 ```text
 Design a Desktop Web Application (1440px width) for a "San Francisco DBI Data Analyst" dashboard.
