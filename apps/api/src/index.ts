@@ -11,6 +11,8 @@ export {
 } from "./agents";
 export { CoreDbiDatabaseRpc } from "./rpc";
 
-export default {
-  fetch: app.fetch,
-};
+export default class extends CoreDbiDatabaseRpc {
+  override async fetch(request: Request) {
+    return app.fetch(request, this.env, this.ctx);
+  }
+}

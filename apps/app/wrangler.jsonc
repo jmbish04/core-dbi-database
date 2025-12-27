@@ -10,10 +10,17 @@
 
   // [ASSETS]
   // Serves bundled JavaScript, CSS, images, and other static assets.
+  "main": "./worker.ts",
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application"
   },
+  "services": [
+    {
+      "binding": "API",
+      "service": "core-dbi-database"
+    }
+  ],
 
   // [ENVIRONMENTS]
   // Environment-specific configurations for different deployment stages.

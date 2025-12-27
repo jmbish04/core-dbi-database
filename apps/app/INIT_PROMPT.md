@@ -132,6 +132,7 @@ Use a custom hook `useAgentSocket` to manage the complex state of the Request De
 ## 7. Current State (Pre-Wired)
 
 - **Backend:** `/v1/analyze`, `/v1/requests/:id`, `/v1/facts` are implemented in `apps/api`.
+- **Backend Binding:** `apps/app` is now bound to `apps/api` via Service Binding `env.API`. If you implement server-side logic (loaders/actions) in `apps/app/worker.ts` or similar, you can use RPC calls like `await env.API.startSearch(...)`.
 - **Frontend:** `routes/(app)/search.tsx`, `requests.$requestId.tsx`, `knowledge.tsx`, `contractors.$id.tsx` are created as placeholders.
 - **Next Step:** Implement the actual UI components inside these route files.
 
