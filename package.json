@@ -26,36 +26,45 @@
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "docs:deploy": "gh-pages --dist docs/.vitepress/dist",
+
     "app:dev": "bun --filter @repo/app dev",
     "app:build": "bun --filter @repo/app build",
     "app:test": "bun --filter @repo/app test",
     "app:deploy": "bun --filter @repo/app deploy",
+    "app:deploy:preview": "bun --filter @repo/app deploy:preview",
     "app:typegen": "bun --filter @repo/app typegen && bun --filter @repo/app secrets:bulk",
     "app:secrets:bulk": "bun --filter @repo/app secrets:bulk && bun --filter @repo/app typegen",
+
     "web:dev": "bun --filter @repo/web dev",
     "web:build": "bun --filter @repo/web build",
     "web:test": "bun --filter @repo/web test",
     "web:deploy": "bun --filter @repo/web deploy",
+    "web:deploy:preview": "bun --filter @repo/web deploy:preview",
     "web:typegen": "bun --filter @repo/web typegen && bun --filter @repo/web secrets:bulk",
     "web:secrets:bulk": "bun --filter @repo/web secrets:bulk && bun --filter @repo/web typegen",
+
     "api:dev": "bun --filter @repo/api dev",
     "api:build": "bun --filter @repo/api build",
     "api:build:docker": "docker build --tag api:latest -f ./apps/api/Dockerfile .",
     "api:test": "bun --filter @repo/api test",
     "api:deploy": "bun --filter @repo/api deploy",
+    "api:deploy:preview": "bun --filter @repo/api deploy:preview",
     "api:typegen": "bun --filter @repo/api typegen && bun --filter @repo/api secrets:bulk",
     "api:secrets:bulk": "bun --filter @repo/api secrets:bulk && bun --filter @repo/api typegen",
+
     "ui:add": "bun --cwd packages/ui add",
     "ui:list": "bun --cwd packages/ui list",
     "ui:update": "bun --cwd packages/ui update",
     "ui:essentials": "bun --cwd packages/ui essentials",
     "ui:typegen": "bun --cwd packages/ui typegen && bun --cwd packages/ui secrets:bulk",
     "ui:secrets:bulk": "bun --cwd packages/ui secrets:bulk && bun --cwd packages/ui typegen",
+
     "email:dev": "bun --filter @repo/email dev",
     "email:build": "bun --filter @repo/email build",
     "email:export": "bun --filter @repo/email export",
     "email:typegen": "bun --filter @repo/email typegen && bun --filter @repo/email secrets:bulk",
     "email:secrets:bulk": "bun --filter @repo/email secrets:bulk && bun --filter @repo/email typegen",
+
     "infra:dev": "bun run infra:dev:edge:apply",
     "infra:dev:edge:plan": "terraform -chdir=infra/envs/dev/edge plan",
     "infra:dev:edge:apply": "terraform -chdir=infra/envs/dev/edge apply -auto-approve",
@@ -72,6 +81,7 @@
     "infra:prod:edge:plan": "terraform -chdir=infra/envs/prod/edge plan",
     "infra:prod:edge:apply": "terraform -chdir=infra/envs/prod/edge apply",
     "infra:prod:edge:destroy": "terraform -chdir=infra/envs/prod/edge destroy",
+
     "secrets:deploy": "bun scripts/deploy-secrets.ts"
   },
   "devDependencies": {
