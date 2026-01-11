@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SF DBI: Serverless Civic Lakehouse Architecture (v3)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chosen Palette: Slate (Structure), Blue (Compute), Orange (Storage/R2), Emerald (Success) -->
+    <style>
+        /* Chart Container Utilities */
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            height: 300px;
+            margin: 0 auto;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 350px;
+            }
+        }
+        /* Custom Scrollbar for code blocks */
+        .code-scroll::-webkit-scrollbar {
+            height: 8px;
+            width: 8px;
+        }
+        .code-scroll::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        .code-scroll::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .tab-active {
+            border-bottom: 2px solid #ea580c; /* Orange for R2 focus */
+            color: #ea580c;
+            font-weight: 600;
+        }
+        .tab-inactive {
+            color: #64748b;
+        }
+        .tab-inactive:hover {
+            color: #334155;
+        }
+        .architecture-arrow-right {
+            position: absolute;
+            right: -10px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 0; 
+            height: 0; 
+            border-top: 6px solid transparent;
+            border-bottom: 6px solid transparent;
+            border-left: 10px solid #94a3b8;
+        }
+    </style>
+    <script>
+        // --- Gemini API Configuration ---
+        const apiKey = ""; // System provides this at runtime
+
+        async function callGeminiAPI(prompt) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }]
+            };
+
+            // Retry logic with exponential backoff
+            for (let i = 0; i < 3; i++) {
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) throw new Error(`API Error: ${response.status}`);
+                    
+                    const data = await response.json();
+                    return data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
+                } catch (e) {
+                    if (i === 2) throw e;
+                    await new Promise(r => setTimeout(r, 1000 * Math.pow(2, i)));
+                }
+            }
+        }
+
+        // --- Global Functions ---
+
+        // Tab Switching Logic
+        window.switchTab = function(tabId) {
+            // Hide all sections
+            ['data', 'arch', 'ai', 'r2', 'prompt'].forEach(id => {
+                const view = document.getElementById('view-' + id);
+                const btn = document.getElementById('nav-' + id);
+                
+                if (view && btn) {
+                    view.classList.add('hidden');
+                    btn.classList.remove('tab-active', 'border-b-2', 'border-orange-600', 'text-orange-600', 'font-semibold');
+                    btn.classList.add('tab-inactive', 'text-slate-600');
+                }
+            });
+
+            // Show selected section
+            const activeView = document.getElementById('view-' + tabId);
+            const activeBtn = document.getElementById('nav-' + tabId);
+            
+            if (activeView && activeBtn) {
+                activeView.classList.remove('hidden');
+                activeBtn.classList.remove('tab-inactive', 'text-slate-600');
+                activeBtn.classList.add('tab-active', 'border-b-2', 'border-orange-600', 'text-orange-600', 'font-semibold');
+            }
+        };
+
+        // Copy Prompt Logic
+        window.copyPrompt = function() {
+            const copyText = document.getElementById("promptText");
+            if (copyText) {
+                copyText.select();
+                copyText.setSelectionRange(0, 99999); 
+                navigator.clipboard.writeText(copyText.value).then(() => {
+                    alert("Complete System Prompt copied to clipboard!");
+                });
+            }
+        };
+
+        // --- Feature 1: AI Normalization (Gemini Powered) ---
+        window.performAINormalization = async function() {
+            const inputEl = document.getElementById('contractorInput');
+            const outputArea = document.getElementById('ai-output-area');
+            const outQueries = document.getElementById('out-queries');
+            const outEntity = document.getElementById('out-entity');
+            const outCount = document.getElementById('out-count');
+            const btn = document.getElementById('normalizeBtn');
+
+            if (!inputEl || !inputEl.value) return;
+            const input = inputEl.value;
+
+            // Loading State
+            outputArea.classList.remove('hidden');
+            outQueries.textContent = "// Calling Gemini 2.5 Flash...\n// Normalizing entity...";
+            btn.disabled = true;
+            btn.innerHTML = 'Processing...';
+
+            const systemPrompt = `You are a specialized Data Normalization Agent for San Francisco Building Permits. 
+            Your goal is to normalize messy contractor names into a canonical ID and generate a precise Socrata (SoQL) filter string.
+            
+            Input Entity: "${input}"
+            
+            1. Create a "canonical_id" (SCREAMING_SNAKE_CASE). E.g., "Turner Construction Co." -> "TURNER_CONST_GRP".
+            2. Determine the "confidence" score (0.0 to 1.0).
+            3. Generate a SoQL $where clause that finds variations of this name. Use 'LIKE' and upper case.
+            
+            Return ONLY raw JSON (no markdown formatting):
+            {
+                "canonical_id": "string",
+                "confidence": number,
+                "soql_filter": "string"
+            }`;
+
+            try {
+                const responseText = await callGeminiAPI(systemPrompt);
+                // Clean response if md blocks present
+                const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+                const data = JSON.parse(cleanJson);
+
+                outEntity.textContent = input;
+                outCount.textContent = `Confidence: ${(data.confidence * 100).toFixed(0)}%`;
+                
+                outQueries.textContent = `
+-- 1. AI Normalized Entity
+   "canonical_id": "${data.canonical_id}"
+
+-- 2. Generated SoQL Filter (SODA API)
+   ${data.soql_filter}
+
+-- 3. R2 SQL Analytical Query (Lake)
+   SELECT * FROM default.permits 
+   WHERE contractor_normalized = '${data.canonical_id}'
+`;
+            } catch (err) {
+                outQueries.textContent = `Error: ${err.message}`;
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '✨ Normalize with Gemini';
+            }
+        };
+
+        // --- Feature 2: Natural Language to R2 SQL (Gemini Powered) ---
+        window.generateR2SQL = async function() {
+            const inputEl = document.getElementById('nlQueryInput');
+            const outputEl = document.getElementById('sqlOutput');
+            const btn = document.getElementById('generateSqlBtn');
+
+            if (!inputEl || !inputEl.value) return;
+            const input = inputEl.value;
+
+            outputEl.textContent = "-- Generating R2 SQL via Gemini...";
+            btn.disabled = true;
+            btn.innerHTML = 'Processing...';
+
+            const systemPrompt = `You are an expert in Cloudflare R2 SQL (using Apache Iceberg).
+            The table 'default.permits' has this flattened schema (NO NESTED JSON, NO JOINs):
+            - permit_number (string)
+            - cost (float)
+            - contractor_flat (string)
+            - status (string)
+            - issue_date (timestamp)
+            - neighborhood (string)
+            
+            Task: Translate this question into a valid SQL query: "${input}"
+            
+            Constraints:
+            1. Use simple aggregations (COUNT, SUM, AVG).
+            2. Assume 'issue_date' partitions. If the question implies recent data, add a WHERE clause for issue_date > '2024-01-01'.
+            3. Return ONLY the SQL string. Do not wrap in markdown.`;
+
+            try {
+                const sql = await callGeminiAPI(systemPrompt);
+                outputEl.textContent = sql.replace(/```sql/g, '').replace(/```/g, '').trim();
+            } catch (err) {
+                outputEl.textContent = `-- Error: ${err.message}`;
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '✨ Generate SQL';
+            }
+        };
+
+    </script>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans leading-relaxed">
+
+    <!-- Header -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <header class="mb-10 text-center sm:text-left">
+            <div class="flex flex-col sm:flex-row items-center justify-between">
+                <div>
+                    <h1 class="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight mb-2">The Serverless Civic Lakehouse</h1>
+                    <p class="text-lg text-slate-600 max-w-3xl">
+                        Architecting an Intelligent, Immutable Data Platform for San Francisco Building Permits using Cloudflare R2 & Pipelines.
+                    </p>
+                </div>
+                <div class="mt-4 sm:mt-0 flex gap-2">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Gemini Powered ✨</span>
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">R2 SQL</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation -->
+        <nav class="flex space-x-6 border-b border-slate-200 mb-8 overflow-x-auto pb-1" aria-label="Tabs">
+            <button id="nav-data" class="tab-active whitespace-nowrap py-4 px-1 text-sm transition-colors" onclick="switchTab('data')">1. Data Sources</button>
+            <button id="nav-arch" class="tab-inactive whitespace-nowrap py-4 px-1 text-sm transition-colors" onclick="switchTab('arch')">2. Dual-Path Architecture</button>
+            <button id="nav-ai" class="tab-inactive whitespace-nowrap py-4 px-1 text-sm transition-colors" onclick="switchTab('ai')">3. AI Normalization</button>
+            <button id="nav-r2" class="tab-inactive whitespace-nowrap py-4 px-1 text-sm transition-colors" onclick="switchTab('r2')">4. R2 Data Lake</button>
+            <button id="nav-prompt" class="tab-inactive whitespace-nowrap py-4 px-1 text-sm transition-colors" onclick="switchTab('prompt')">5. Agent Prompt</button>
+        </nav>
+
+        <!-- View: Data Inventory -->
+        <section id="view-data" class="space-y-8 animate-fade-in">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <h2 class="text-xl font-bold mb-4 text-slate-800">Source: SF Open Data (SODA)</h2>
+                <p class="text-slate-600 mb-6">
+                    We are ingesting from the "Mutating Source" (SODA API). Since Socrata overwrites records, our R2 Lakehouse will provide the critical <strong>Immutable History</strong>.
+                </p>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="p-5 rounded-lg border border-slate-200 bg-slate-50 hover:shadow-md transition-shadow">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="font-bold text-blue-700">Building Permits</h3>
+                            <span class="text-xs font-mono bg-blue-100 text-blue-800 px-2 py-1 rounded">i98e-djp9</span>
+                        </div>
+                        <p class="text-sm text-slate-600 mb-4 h-16">The "Fact Table". Status, cost, contractor links. High volume mutations.</p>
+                        <div class="text-xs font-mono bg-slate-800 text-slate-200 p-3 rounded overflow-x-auto">
+                            GET /resource/i98e-djp9.json
+                        </div>
+                    </div>
+                    <div class="p-5 rounded-lg border border-slate-200 bg-slate-50 hover:shadow-md transition-shadow">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="font-bold text-red-700">Complaints</h3>
+                            <span class="text-xs font-mono bg-red-100 text-red-800 px-2 py-1 rounded">hk68-rn9f</span>
+                        </div>
+                        <p class="text-sm text-slate-600 mb-4 h-16">Code violations. Critical for background checks and risk analysis.</p>
+                        <div class="text-xs font-mono bg-slate-800 text-slate-200 p-3 rounded overflow-x-auto">
+                            GET /resource/hk68-rn9f.json
+                        </div>
+                    </div>
+                    <div class="p-5 rounded-lg border border-slate-200 bg-slate-50 hover:shadow-md transition-shadow">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="font-bold text-emerald-700">Contractor Index</h3>
+                            <span class="text-xs font-mono bg-emerald-100 text-emerald-800 px-2 py-1 rounded">Derived</span>
+                        </div>
+                        <p class="text-sm text-slate-600 mb-4 h-16">Not a direct SODA endpoint. We build this via AI normalization in the Worker.</p>
+                        <div class="text-xs font-mono bg-slate-800 text-slate-200 p-3 rounded overflow-x-auto">
+                            SELECT * FROM D1.contractors
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                    <h3 class="text-lg font-bold mb-2">Query Distribution Strategy</h3>
+                    <p class="text-sm text-slate-500 mb-6">D1 handles hot lookups, R2 SQL handles heavy analytics.</p>
+                    <div class="chart-container">
+                        <canvas id="searchStrategyChart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                    <h3 class="text-lg font-bold mb-4">Ingestion Challenges</h3>
+                    <ul class="space-y-4 text-sm text-slate-600">
+                        <li class="flex gap-3">
+                            <span class="flex-shrink-0 w-6 h-6 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center font-bold">!</span>
+                            <span><strong>No JOINs in R2 SQL:</strong> We must denormalize data (e.g., embed Contractor Name into Permit Record) <em>before</em> sending to the Pipeline.</span>
+                        </li>
+                        <li class="flex gap-3">
+                            <span class="flex-shrink-0 w-6 h-6 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center font-bold">!</span>
+                            <span><strong>Nested JSON:</strong> R2 SQL cannot query deep JSON objects. The Ingestion Worker must flatten `location { lat, long }` to `location_lat`, `location_long`.</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- View: Architecture -->
+        <section id="view-arch" class="hidden space-y-8 animate-fade-in">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <h2 class="text-xl font-bold mb-4 text-slate-800">System Architecture: Dual-Path Processing</h2>
+                <p class="text-slate-600 mb-8">
+                    We utilize a hybrid approach. <strong>Path A (Hot)</strong> uses D1 for sub-second application state. <strong>Path B (Cold)</strong> uses Pipelines + R2 for an infinite, SQL-queryable history log.
+                </p>
+
+                <!-- Architectural Diagram -->
+                <div class="relative w-full max-w-5xl mx-auto py-8 overflow-hidden select-none">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-8 relative z-10">
+                        
+                        <!-- Left: Sources -->
+                        <div class="flex flex-col justify-center gap-6">
+                            <div class="p-4 bg-slate-100 border border-slate-300 rounded-lg text-center">
+                                <div class="font-bold text-slate-700">SF Open Data</div>
+                                <div class="text-xs text-slate-500">Socrata API</div>
+                            </div>
+                            <div class="p-4 bg-blue-50 border border-blue-200 rounded-lg text-center">
+                                <div class="font-bold text-blue-700">Cron Trigger</div>
+                                <div class="text-xs text-blue-500">Daily Sync</div>
+                            </div>
+                        </div>
+
+                        <!-- Center: The Worker Core -->
+                        <div class="border-2 border-dashed border-slate-300 rounded-xl p-6 bg-slate-50 relative">
+                            <span class="absolute -top-3 left-4 bg-slate-200 text-slate-600 text-xs px-2 font-bold uppercase">Cloudflare Worker</span>
+                            
+                            <!-- Path A -->
+                            <div class="mb-6 p-3 bg-white border-l-4 border-blue-500 shadow-sm">
+                                <div class="font-bold text-sm text-blue-900">Path A: Interactive</div>
+                                <div class="text-xs text-slate-500">Fast lookups, UI search</div>
+                                <div class="mt-2 flex items-center gap-2">
+                                    <div class="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">AI Norm</div>
+                                    <span class="text-slate-400">→</span>
+                                    <div class="px-2 py-1 bg-blue-600 text-white text-xs rounded">D1 DB</div>
+                                </div>
+                            </div>
+
+                            <!-- Path B -->
+                            <div class="p-3 bg-white border-l-4 border-orange-500 shadow-sm">
+                                <div class="font-bold text-sm text-orange-900">Path B: Data Lake</div>
+                                <div class="text-xs text-slate-500">Analytics, History</div>
+                                <div class="mt-2 flex items-center gap-2">
+                                    <div class="px-2 py-1 bg-orange-100 text-orange-700 text-xs rounded">Flatten</div>
+                                    <span class="text-slate-400">→</span>
+                                    <div class="px-2 py-1 bg-orange-600 text-white text-xs rounded">Pipeline</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right: Storage -->
+                        <div class="flex flex-col justify-center gap-6">
+                            <div class="p-4 bg-blue-900 text-white rounded-lg text-center shadow-lg">
+                                <div class="font-bold">D1 Database</div>
+                                <div class="text-xs text-blue-200">Current State</div>
+                            </div>
+                            <div class="p-4 bg-orange-100 border border-orange-300 text-orange-900 rounded-lg text-center shadow-md">
+                                <div class="font-bold">R2 Data Catalog</div>
+                                <div class="text-xs text-orange-700">Apache Iceberg Tables</div>
+                            </div>
+                        </div>
+
+                    </div>
+                    <!-- Connectors -->
+                    <div class="absolute top-1/2 left-1/3 w-8 h-1 bg-slate-300 -translate-y-1/2 hidden md:block"></div>
+                    <div class="absolute top-1/2 right-1/3 w-8 h-1 bg-slate-300 -translate-y-1/2 hidden md:block"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- View: AI & Normalization (GEMINI POWERED) -->
+        <section id="view-ai" class="hidden space-y-8 animate-fade-in">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <div class="flex items-center gap-2 mb-4">
+                    <h2 class="text-xl font-bold text-slate-800">Worker AI Normalization</h2>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">Live Gemini Demo</span>
+                </div>
+                <p class="text-slate-600 mb-6">
+                    Test the normalization logic. This performs a live call to the <strong>Gemini 2.5 Flash</strong> model to resolve messy contractor names and generate SoQL queries.
+                </p>
+                <!-- Interactive Normalizer Demo -->
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-6">
+                    <label class="block text-sm font-bold text-slate-700 mb-2">Input Raw Entity String</label>
+                    <div class="flex flex-col sm:flex-row gap-3 mb-6">
+                        <input type="text" id="contractorInput" value="Turner Construction Company Inc." class="flex-1 p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none" placeholder="e.g. Joe's Plumbing">
+                        <button id="normalizeBtn" onclick="performAINormalization()" class="bg-orange-600 hover:bg-orange-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center gap-2">
+                            ✨ Normalize with Gemini
+                        </button>
+                    </div>
+
+                    <div id="ai-output-area" class="hidden">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">AI Output</h4>
+                                <div class="bg-white p-4 rounded border border-slate-200 text-sm space-y-2">
+                                    <p><span class="font-semibold">Raw:</span> <span id="out-entity" class="text-slate-600"></span></p>
+                                    <p><span class="font-semibold">Result:</span> <span id="out-count" class="text-emerald-600"></span></p>
+                                </div>
+                            </div>
+                            <div>
+                                <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Generated Queries</h4>
+                                <div id="out-queries" class="bg-slate-900 text-green-400 p-4 rounded text-xs font-mono whitespace-pre-wrap code-scroll h-32 overflow-y-auto"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- View: R2 Data Lake (GEMINI POWERED SQL GENERATOR) -->
+        <section id="view-r2" class="hidden space-y-8 animate-fade-in">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <div class="flex items-center gap-3 mb-6">
+                    <h2 class="text-2xl font-bold text-slate-800">The R2 Data Lake</h2>
+                    <span class="px-2 py-1 bg-orange-100 text-orange-800 text-xs font-bold rounded uppercase">Core Feature</span>
+                </div>
+                
+                <p class="text-slate-600 mb-8">
+                    This engine enables historical analysis. By piping data into <strong>Cloudflare Pipelines</strong>, we generate <strong>Apache Iceberg</strong> tables in R2, allowing standard SQL queries over massive datasets.
+                </p>
+
+                <!-- Natural Language SQL Generator -->
+                <div class="mb-8 border border-indigo-200 bg-indigo-50 rounded-lg p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="font-bold text-indigo-900 flex items-center gap-2">
+                            <span>✨ Natural Language Query Builder</span>
+                        </h3>
+                        <span class="text-xs text-indigo-600 bg-indigo-100 px-2 py-1 rounded">Powered by Gemini</span>
+                    </div>
+                    <div class="flex flex-col sm:flex-row gap-3 mb-4">
+                        <input type="text" id="nlQueryInput" class="flex-1 p-3 border border-indigo-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="e.g. List top 5 contractors by total project cost in 2024">
+                        <button id="generateSqlBtn" onclick="generateR2SQL()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap">
+                            ✨ Generate SQL
+                        </button>
+                    </div>
+                    <div class="bg-slate-900 rounded p-4 text-xs font-mono text-yellow-300 overflow-x-auto code-scroll relative">
+                        <pre id="sqlOutput">-- SQL query will appear here...</pre>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <!-- Step 1: Configuration -->
+                    <div class="border border-slate-200 rounded-lg p-0 overflow-hidden">
+                        <div class="bg-slate-100 p-3 border-b border-slate-200 font-bold text-slate-700 text-sm">Step 1: Setup Pipeline</div>
+                        <div class="p-5 bg-white">
+                            <p class="text-sm text-slate-600 mb-4">
+                                Define schema. Pipeline handles batching, Parquet conversion, and R2 storage.
+                            </p>
+                            <div class="bg-slate-900 rounded p-4 text-xs font-mono text-blue-300 overflow-x-auto code-scroll">
+# Wrangler Command
+npx wrangler pipelines create permits_pipe \
+  --sql "INSERT INTO permits_sink SELECT * FROM permits_stream"
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: The Ingestion Worker -->
+                    <div class="border border-slate-200 rounded-lg p-0 overflow-hidden">
+                        <div class="bg-slate-100 p-3 border-b border-slate-200 font-bold text-slate-700 text-sm">Step 2: Worker Ingestion</div>
+                        <div class="p-5 bg-white">
+                            <p class="text-sm text-slate-600 mb-4">
+                                Worker fetches SODA, <strong>flattens JSON</strong>, and POSTs to Pipeline.
+                            </p>
+                            <div class="bg-slate-900 rounded p-4 text-xs font-mono text-green-400 overflow-x-auto code-scroll">
+// CRITICAL: Flatten before pipeline
+const flat = raw.map(r => ({
+   permit_id: r.permit_number,
+   contractor_flat: r.contractor?.name || "Unknown",
+   // ...
+}));
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- View: The Prompt -->
+        <section id="view-prompt" class="hidden space-y-8 animate-fade-in">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold text-slate-800">Final Deliverable: Coding Agent Prompt</h2>
+                    <button onclick="copyPrompt()" class="text-sm bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 px-4 rounded border border-slate-300 transition-colors">
+                        Copy to Clipboard
+                    </button>
+                </div>
+                
+                <div class="relative">
+                    <textarea id="promptText" readonly class="w-full h-[500px] bg-slate-900 text-slate-300 p-6 rounded-lg font-mono text-xs sm:text-sm leading-relaxed outline-none code-scroll focus:ring-2 focus:ring-orange-500">
+# Role
+Act as a Principal Cloudflare Architect and Developer.
+
+# Objective
+Build a "Serverless Civic Lakehouse" for San Francisco Building Permits.
+The system must ingest data from SFGov SODA API, normalize it using AI, cache hot data in D1, and archive historical data in R2 for analytics.
+
+# Components & Stack
+
+1.  **Ingestion Worker (TypeScript)**:
+    * Triggers via Cron (ScheduledEvent).
+    * Fetches from SODA (`i98e-djp9.json`).
+    * **CRITICAL STEP**: Flattens/Denormalizes JSON objects (no nested fields allowed for R2 SQL).
+    * **CRITICAL STEP**: Uses `Workers AI` (@cf/meta/llama-3-8b-instruct) to normalize `Contractor Names`.
+    * Sends processed data to:
+        * Path A: D1 Database (`permits` table) for recent/hot data.
+        * Path B: Pipeline HTTP Endpoint for archival.
+
+2.  **Cloudflare Pipelines (Data Lake)**:
+    * Source: HTTP Stream.
+    * Transformation: `INSERT INTO permits_sink SELECT * FROM permits_stream`
+    * Sink: R2 Data Catalog (Iceberg Table `default.permits`).
+    * Schema: Must be flat. Include `permit_number`, `cost`, `contractor_normalized`, `status`, `lat`, `long`.
+
+3.  **Search API (Hono)**:
+    * `GET /search`: Queries D1 for fast results.
+    * `GET /analytics`: Queries R2 SQL for aggregations.
+
+# Setup Commands (Generate these in SETUP.md)
+1.  `npx wrangler r2 bucket create sf-dbi-lake`
+2.  `npx wrangler r2 bucket catalog enable sf-dbi-lake`
+3.  `npx wrangler pipelines streams create permits_stream ...`
+4.  `npx wrangler pipelines sinks create permits_sink ...`
+
+# Code Requirements
+* **worker.ts**: Complete Hono application with `scheduled` handler and API routes.
+* **schema.sql**: D1 schema definition.
+* **permits_schema.json**: Definition for the Pipeline stream.
+* **R2 SQL Example**: A sample query in comments showing how to aggregate cost by contractor.
+
+# Constraints
+* R2 SQL does NOT support JOINs. Do not write queries that use JOIN.
+* R2 SQL does NOT support nested JSON access. Ensure ingestion flattens data.
+</textarea>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        // Chart Initialization
+        document.addEventListener('DOMContentLoaded', function() {
+            const chartCanvas = document.getElementById('searchStrategyChart');
+            
+            if (chartCanvas) {
+                const ctx = chartCanvas.getContext('2d');
+                
+                new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['D1: Recent Search (Hot)', 'D1: Geo/Loc (Hot)', 'R2: Hist. Analytics (Cold)', 'R2: Compliance (Cold)'],
+                        datasets: [{
+                            label: 'Query Volume',
+                            data: [40, 20, 30, 10],
+                            backgroundColor: [
+                                '#2563eb', // Blue
+                                '#60a5fa', // Light Blue
+                                '#ea580c', // Orange (R2)
+                                '#fdba74'  // Light Orange
+                            ],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'right',
+                                labels: {
+                                    usePointStyle: true,
+                                    padding: 20
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>
